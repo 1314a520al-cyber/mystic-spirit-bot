@@ -1,7 +1,6 @@
 """
-TK全能机器人 - AstrBot 插件
-功能：用户系统+权限、AI聊天、文件管理+全文搜索、存储、实用工具
-交互式命令：先发命令，机器人提示后再发内容
+秘庭-幻灵 - AstrBot 插件
+功能：用户系统+权限、AI聊天、文件管理、存储、实用工具
 """
 import os
 import json
@@ -23,11 +22,9 @@ FILES_DIR = os.path.join(DATA_DIR, "files")
 os.makedirs(DATA_DIR, exist_ok=True)
 os.makedirs(FILES_DIR, exist_ok=True)
 
-# 交互状态：{user_id: {"cmd": "register", "step": "password", "data": {}}}
 user_states = {}
 
 
-# ==================== 数据库 ====================
 def get_db():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -40,14 +37,14 @@ def init_db():
     c.execute("""CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         tg_id TEXT UNIQUE NOT NULL,
-        username TEXT,
-        nickname TEXT,
-        password_hash TEXT,
-        second_password_hash TEXT,
+        username TEXT DEFAULT '',
+        nickname TEXT DEFAULT '',
+        password_hash TEXT DEFAULT '',
+        second_password_hash TEXT DEFAULT '',
         role TEXT DEFAULT 'user',
         permissions TEXT DEFAULT '[]',
-        register_time INTEGER,
-        last_login INTEGER,
+        register_time INTEGER DEFAULT 0,
+        last_login INTEGER DEFAULT 0,
         status TEXT DEFAULT 'active'
     )""")
     c.execute("""CREATE TABLE IF NOT EXISTS files (
@@ -55,25 +52,23 @@ def init_db():
         user_id TEXT,
         file_name TEXT,
         file_type TEXT,
-        file_size INTEGER,
-        file_path TEXT,
-        content TEXT,
-        upload_time INTEGER,
-        tags TEXT DEFAULT '[]'
+        file_size INTEGER DEFAULT 0,
+        upload_time INTEGER DEFAULT 0,
+        tags TEXT DEFAULT ''
     )""")
     c.execute("""CREATE TABLE IF NOT EXISTS storage (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id TEXT,
         key TEXT,
         value TEXT,
-        update_time INTEGER,
+        update_time INTEGER DEFAULT 0,
         UNIQUE(user_id, key)
     )""")
     c.execute("""CREATE TABLE IF NOT EXISTS login_codes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id TEXT,
         code TEXT,
-        expire_time INTEGER,
+        expire_time INTEGER DEFAULT 0,
         used INTEGER DEFAULT 0
     )""")
     conn.commit()
@@ -83,7 +78,6 @@ def init_db():
 init_db()
 
 
-# ==================== 工具函数 ====================
 def hash_password(password: str) -> str:
     return hashlib.sha256(password.encode()).hexdigest()
 
@@ -125,7 +119,6 @@ def clear_state(user_id: str):
     user_states.pop(user_id, None)
 
 
-# AI 配置
 AI_CONFIG_PATH = os.path.join(DATA_DIR, "ai_config.json")
 AI_API_URL = "https://api.deepseek.com/v1/chat/completions"
 AI_MODEL = "deepseek-chat"
@@ -147,7 +140,10 @@ if os.path.exists(AI_CONFIG_PATH):
 
 
 async def ai_chat(message: str) -> str:
-    import aiohttp
+    try:
+        import aiohttp
+    except ImportError:
+        return "缺少 aiohttp 依赖，请联系管理员安装"
     apis = []
     if AI_API_KEY:
         apis.append({"url": AI_API_URL, "model": AI_MODEL, "key": AI_API_KEY})
@@ -168,70 +164,41 @@ async def ai_chat(message: str) -> str:
                     if resp.status == 200:
                         data = await resp.json()
                         return data["choices"][0]["message"]["content"]
-        except Exception as e:
+        except:
             continue
-    return "AI 服务暂时不可用，请稍后再试，或联系管理员配置 API Key"
+    return "AI 服务暂时不可用，请稍后再试"
 
 
-async def download_and_save_file(event, user_id, file_id, file_name, file_type, file_size, tags=""):
-    """下载文件并保存到数据库"""
-    try:
-        bot = event.context.get_bot()
-        file_obj = await bot.get_file(file_id=file_id)
-        file_data = await file_obj.download_as_bytearray()
-        now = int(time.time())
-        safe_name = f"{now}_{hashlib.md5(file_name.encode()).hexdigest()[:8]}_{file_name}"
-        file_path = os.path.join(FILES_DIR, safe_name)
-        with open(file_path, 'wb') as wf:
-            wf.write(file_data)
-        content = ""
-        if file_type.startswith("text/") or file_name.endswith(('.txt', '.md', '.csv', '.json', '.py', '.js', '.html', '.css', '.log')):
-            try:
-                content = file_data.decode('utf-8', errors='ignore')[:50000]
-            except:
-                pass
-        conn = get_db()
-        conn.execute("""INSERT INTO files (user_id, file_name, file_type, file_size, file_path, content, upload_time, tags)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (user_id, file_name, file_type, file_size, file_path, content, now, tags))
-        conn.commit()
-        conn.close()
-        return True
-    except Exception as e:
-        logger.error(f"下载文件失败: {e}")
-        return False
-
-
-# ==================== 插件主类 ====================
-class TKBotPlugin(Star):
+class MysticSpiritBot(Star):
     def __init__(self, context: Context):
         super().__init__(context)
-        logger.info("TK全能机器人插件已加载")
+        logger.info("秘庭-幻灵插件已加载")
 
     def terminate(self):
-        logger.info("TK全能机器人插件已卸载")
+        logger.info("秘庭-幻灵插件已卸载")
 
-    # ==================== 交互式消息监听器 ====================
+    # ==================== 交互式消息监听 ====================
     @filter.event_message_type(filter.EventMessageType.ALL)
-    async def on_interactive_message(self, event: AstrMessageEvent):
-        """处理交互式命令的后续输入"""
+    async def on_message(self, event: AstrMessageEvent):
         global AI_API_KEY, AI_API_URL, AI_MODEL
-        user_id = str(event.get_sender_id())
-        text = event.message_str.strip()
+        try:
+            user_id = str(event.get_sender_id())
+            text = event.message_str.strip() if hasattr(event, 'message_str') else ""
+        except:
+            return
 
-        # 如果用户发了新命令（以 / 开头），取消当前交互
         if text.startswith("/"):
             clear_state(user_id)
             return
 
         state = user_states.get(user_id)
         if not state:
-            return  # 不在交互中，不处理
+            return
 
         cmd = state["cmd"]
         step = state["step"]
 
-        # ==================== register 交互 ====================
+        # ===== register =====
         if cmd == "register":
             if step == "password":
                 if len(text) < 4:
@@ -249,27 +216,18 @@ class TKBotPlugin(Star):
                     yield event.plain_result("你已经注册过了，用 /login 登录")
                     return
                 now = int(time.time())
-                # 安全获取用户名
-                username = ""
-                try:
-                    msg_obj = event.message_obj
-                    if hasattr(msg_obj, 'from_user') and msg_obj.from_user:
-                        username = getattr(msg_obj.from_user, 'username', '') or ""
-                except:
-                    pass
                 conn = get_db()
-                conn.execute("""INSERT INTO users (tg_id, username, nickname, password_hash, second_password_hash, role, register_time, last_login)
-                    VALUES (?, ?, ?, ?, ?, 'user', ?, ?)""",
-                    (user_id, username, event.get_sender_name(),
-                     hash_password(password), hash_password(second_password) if second_password else "",
-                     now, now))
+                conn.execute("""INSERT INTO users (tg_id, nickname, password_hash, second_password_hash, role, register_time, last_login)
+                    VALUES (?, ?, ?, ?, 'user', ?, ?)""",
+                    (user_id, event.get_sender_name(), hash_password(password),
+                     hash_password(second_password) if second_password else "", now, now))
                 conn.commit()
                 conn.close()
                 clear_state(user_id)
                 yield event.plain_result(f"注册成功！昵称：{event.get_sender_name()}\n用 /login 登录")
                 return
 
-        # ==================== login 交互 ====================
+        # ===== login =====
         if cmd == "login":
             if step == "password":
                 user = get_user(user_id)
@@ -309,39 +267,20 @@ class TKBotPlugin(Star):
                 yield event.plain_result(f"登录成功！身份：{role_text}\n用 /help 查看所有命令")
                 return
 
-        # ==================== secondpass 交互 ====================
-        if cmd == "secondpass":
+        # ===== ai =====
+        if cmd == "ai" and step == "question":
             user = get_user(user_id)
             if not user:
                 clear_state(user_id)
                 yield event.plain_result("请先登录")
                 return
-            if not user["second_password_hash"]:
-                clear_state(user_id)
-                yield event.plain_result("你没有设置二级密码，跳过")
-                return
-            if user["second_password_hash"] == hash_password(text):
-                clear_state(user_id)
-                yield event.plain_result("二级密码验证通过")
-            else:
-                yield event.plain_result("二级密码错误，请重新输入")
+            clear_state(user_id)
+            yield event.plain_result("思考中...")
+            answer = await ai_chat(text)
+            yield event.plain_result(f"AI 回答：\n{answer}")
             return
 
-        # ==================== ai 交互 ====================
-        if cmd == "ai":
-            if step == "question":
-                user = get_user(user_id)
-                if not user:
-                    clear_state(user_id)
-                    yield event.plain_result("请先登录")
-                    return
-                clear_state(user_id)
-                yield event.plain_result("思考中...")
-                answer = await ai_chat(text)
-                yield event.plain_result(f"AI 回答：\n{answer}")
-                return
-
-        # ==================== setai 交互 ====================
+        # ===== setai =====
         if cmd == "setai":
             user = get_user(user_id)
             if not user or not check_permission(user, "manage_ai"):
@@ -372,113 +311,62 @@ class TKBotPlugin(Star):
                 yield event.plain_result(f"AI API 已设置\n模型：{model}\n地址：{api_url}")
                 return
 
-        # ==================== upload 交互 ====================
-        if cmd == "upload":
-            if step == "file":
-                user = get_user(user_id)
-                if not user:
-                    clear_state(user_id)
-                    yield event.plain_result("请先登录")
-                    return
-                # 尝试获取消息中的文件
-                saved = False
-                try:
-                    msg_obj = event.message_obj
-                    if hasattr(msg_obj, 'document') and msg_obj.document:
-                        doc = msg_obj.document
-                        saved = await download_and_save_file(
-                            event, user_id, doc.file_id,
-                            getattr(doc, 'file_name', 'document'),
-                            getattr(doc, 'mime_type', 'application/octet-stream'),
-                            getattr(doc, 'file_size', 0),
-                            state["data"].get("tags", "")
-                        )
-                    if not saved and hasattr(msg_obj, 'photo') and msg_obj.photo:
-                        photo = msg_obj.photo[-1]
-                        saved = await download_and_save_file(
-                            event, user_id, photo.file_id,
-                            f"photo_{int(time.time())}.jpg",
-                            "image/jpeg",
-                            getattr(photo, 'file_size', 0),
-                            state["data"].get("tags", "")
-                        )
-                except Exception as e:
-                    logger.error(f"处理上传文件失败: {e}")
-                if saved:
-                    clear_state(user_id)
-                    yield event.plain_result("文件上传成功！\n用 /search 关键词 搜索文件内容\n用 /files 查看已上传文件")
-                else:
-                    yield event.plain_result("没有检测到文件，请发送或转发文件（不需要再发 /upload）")
-                return
-            if step == "tags":
-                state["data"]["tags"] = text
-                state["step"] = "file"
-                yield event.plain_result("请发送或转发要上传的文件")
-                return
-
-        # ==================== search 交互 ====================
-        if cmd == "search":
-            if step == "keyword":
-                user = get_user(user_id)
-                if not user:
-                    clear_state(user_id)
-                    yield event.plain_result("请先登录")
-                    return
-                keyword = text
-                conn = get_db()
-                results = conn.execute("""SELECT * FROM files WHERE user_id=? AND (file_name LIKE ? OR content LIKE ? OR tags LIKE ?)
-                    ORDER BY upload_time DESC LIMIT 10""",
-                    (user_id, f"%{keyword}%", f"%{keyword}%", f"%{keyword}%")).fetchall()
-                conn.close()
+        # ===== upload =====
+        if cmd == "upload" and step == "tags":
+            user = get_user(user_id)
+            if not user:
                 clear_state(user_id)
-                if not results:
-                    yield event.plain_result(f"没有找到包含「{keyword}」的文件")
-                    return
-                text_out = f"搜索「{keyword}」结果（{len(results)}个）\n"
-                for f in results:
-                    context = ""
-                    if f["content"]:
-                        idx = f["content"].lower().find(keyword.lower())
-                        if idx >= 0:
-                            start = max(0, idx - 30)
-                            end = min(len(f["content"]), idx + len(keyword) + 30)
-                            context = f["content"][start:end].replace("\n", " ")
-                    text_out += f"#{f['id']} {f['file_name']} ({format_size(f['file_size'])})\n"
-                    if context:
-                        text_out += f"  ...{context}...\n"
-                yield event.plain_result(text_out)
+                yield event.plain_result("请先登录")
                 return
+            state["data"]["tags"] = text
+            state["step"] = "file"
+            yield event.plain_result("请发送或转发要上传的文件")
+            return
 
-        # ==================== delfile 交互 ====================
-        if cmd == "delfile":
-            if step == "file_id":
-                user = get_user(user_id)
-                if not user:
-                    clear_state(user_id)
-                    yield event.plain_result("请先登录")
-                    return
-                try:
-                    file_id = int(text)
-                except:
-                    yield event.plain_result("文件ID必须是数字，请重新输入")
-                    return
-                conn = get_db()
-                f = conn.execute("SELECT * FROM files WHERE id=? AND user_id=?", (file_id, user_id)).fetchone()
-                if not f:
-                    conn.close()
-                    clear_state(user_id)
-                    yield event.plain_result("文件不存在或无权删除")
-                    return
-                if os.path.exists(f["file_path"]):
-                    os.remove(f["file_path"])
-                conn.execute("DELETE FROM files WHERE id=?", (file_id,))
-                conn.commit()
-                conn.close()
+        # ===== search =====
+        if cmd == "search" and step == "keyword":
+            user = get_user(user_id)
+            if not user:
                 clear_state(user_id)
-                yield event.plain_result(f"已删除文件：{f['file_name']}")
+                yield event.plain_result("请先登录")
                 return
+            keyword = text
+            conn = get_db()
+            results = conn.execute("""SELECT * FROM files WHERE user_id=? AND (file_name LIKE ? OR tags LIKE ?)
+                ORDER BY upload_time DESC LIMIT 10""",
+                (user_id, f"%{keyword}%", f"%{keyword}%")).fetchall()
+            conn.close()
+            clear_state(user_id)
+            if not results:
+                yield event.plain_result(f"没有找到包含「{keyword}」的文件")
+                return
+            text_out = f"搜索「{keyword}」结果（{len(results)}个）\n"
+            for f in results:
+                text_out += f"#{f['id']} {f['file_name']} ({format_size(f['file_size'])})\n"
+            yield event.plain_result(text_out)
+            return
 
-        # ==================== set 存储交互 ====================
+        # ===== delfile =====
+        if cmd == "delfile" and step == "file_id":
+            user = get_user(user_id)
+            if not user:
+                clear_state(user_id)
+                yield event.plain_result("请先登录")
+                return
+            try:
+                file_id = int(text)
+            except:
+                yield event.plain_result("文件ID必须是数字，请重新输入")
+                return
+            conn = get_db()
+            conn.execute("DELETE FROM files WHERE id=? AND user_id=?", (file_id, user_id))
+            conn.commit()
+            conn.close()
+            clear_state(user_id)
+            yield event.plain_result(f"已删除文件 #{file_id}")
+            return
+
+        # ===== set =====
         if cmd == "set":
             if step == "key":
                 state["data"]["key"] = text
@@ -504,113 +392,107 @@ class TKBotPlugin(Star):
                 yield event.plain_result(f"已保存：{key} = {value}")
                 return
 
-        # ==================== get 存储交互 ====================
-        if cmd == "get":
-            if step == "key":
-                user = get_user(user_id)
-                if not user:
-                    clear_state(user_id)
-                    yield event.plain_result("请先登录")
-                    return
-                conn = get_db()
-                record = conn.execute("SELECT * FROM storage WHERE user_id=? AND key=?",
-                    (user_id, text)).fetchone()
-                conn.close()
+        # ===== get =====
+        if cmd == "get" and step == "key":
+            user = get_user(user_id)
+            if not user:
                 clear_state(user_id)
-                if not record:
-                    yield event.plain_result(f"没有找到键「{text}」")
-                    return
-                yield event.plain_result(f"{record['key']} = {record['value']}")
+                yield event.plain_result("请先登录")
                 return
+            conn = get_db()
+            record = conn.execute("SELECT * FROM storage WHERE user_id=? AND key=?",
+                (user_id, text)).fetchone()
+            conn.close()
+            clear_state(user_id)
+            if not record:
+                yield event.plain_result(f"没有找到键「{text}」")
+                return
+            yield event.plain_result(f"{record['key']} = {record['value']}")
+            return
 
-        # ==================== del 存储交互 ====================
-        if cmd == "del":
-            if step == "key":
-                user = get_user(user_id)
-                if not user:
-                    clear_state(user_id)
-                    yield event.plain_result("请先登录")
-                    return
-                conn = get_db()
-                conn.execute("DELETE FROM storage WHERE user_id=? AND key=?", (user_id, text))
-                conn.commit()
-                conn.close()
+        # ===== del storage =====
+        if cmd == "del" and step == "key":
+            user = get_user(user_id)
+            if not user:
                 clear_state(user_id)
-                yield event.plain_result(f"已删除：{text}")
+                yield event.plain_result("请先登录")
                 return
+            conn = get_db()
+            conn.execute("DELETE FROM storage WHERE user_id=? AND key=?", (user_id, text))
+            conn.commit()
+            conn.close()
+            clear_state(user_id)
+            yield event.plain_result(f"已删除：{text}")
+            return
 
-        # ==================== weather 交互 ====================
-        if cmd == "weather":
-            if step == "city":
+        # ===== weather =====
+        if cmd == "weather" and step == "city":
+            try:
                 import aiohttp
                 city = text
-                try:
-                    async with aiohttp.ClientSession() as session:
-                        async with session.get(f"https://wttr.in/{city}?format=j1", timeout=10) as resp:
-                            if resp.status == 200:
-                                data = await resp.json()
-                                current = data["current_condition"][0]
-                                desc = current["lang_zh"][0]["value"] if current.get("lang_zh") else current["weatherDesc"][0]["value"]
-                                temp = current["temp_C"]
-                                feels = current["FeelsLikeC"]
-                                humidity = current["humidity"]
-                                wind = current["windspeedKmph"]
-                                clear_state(user_id)
-                                yield event.plain_result(f"{city}天气\n天气：{desc}\n温度：{temp}°C（体感{feels}°C）\n湿度：{humidity}%\n风速：{wind} km/h")
-                                return
-                except:
-                    pass
-                clear_state(user_id)
-                yield event.plain_result("天气查询失败")
-                return
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(f"https://wttr.in/{city}?format=j1", timeout=10) as resp:
+                        if resp.status == 200:
+                            data = await resp.json()
+                            current = data["current_condition"][0]
+                            desc = current["weatherDesc"][0]["value"]
+                            temp = current["temp_C"]
+                            feels = current["FeelsLikeC"]
+                            humidity = current["humidity"]
+                            wind = current["windspeedKmph"]
+                            clear_state(user_id)
+                            yield event.plain_result(f"{city}天气\n天气：{desc}\n温度：{temp}°C（体感{feels}°C）\n湿度：{humidity}%\n风速：{wind} km/h")
+                            return
+            except:
+                pass
+            clear_state(user_id)
+            yield event.plain_result("天气查询失败")
+            return
 
-        # ==================== translate 交互 ====================
-        if cmd == "translate":
-            if step == "text":
-                clear_state(user_id)
-                result = await ai_chat(f"请把下面的文字翻译成中文（如果是中文就翻译成英文），只输出翻译结果：{text}")
-                yield event.plain_result(f"翻译结果：\n{result}")
-                return
+        # ===== translate =====
+        if cmd == "translate" and step == "text":
+            clear_state(user_id)
+            result = await ai_chat(f"请把下面的文字翻译成中文（如果是中文就翻译成英文），只输出翻译结果：{text}")
+            yield event.plain_result(f"翻译结果：\n{result}")
+            return
 
-        # ==================== addadmin 交互 ====================
-        if cmd == "addadmin":
-            if step == "user_id":
-                user = get_user(user_id)
-                if not user or not check_permission(user, "manage_admin"):
-                    clear_state(user_id)
-                    yield event.plain_result("权限不足（需要超级管理员）")
-                    return
-                target = get_user(text)
-                if not target:
-                    clear_state(user_id)
-                    yield event.plain_result("用户不存在")
-                    return
-                conn = get_db()
-                conn.execute("UPDATE users SET role='admin' WHERE tg_id=?", (text,))
-                conn.commit()
-                conn.close()
+        # ===== addadmin =====
+        if cmd == "addadmin" and step == "user_id":
+            user = get_user(user_id)
+            if not user or not check_permission(user, "manage_admin"):
                 clear_state(user_id)
-                yield event.plain_result(f"已将 {target['nickname']} 设为管理员")
+                yield event.plain_result("权限不足（需要超级管理员）")
                 return
-
-        # ==================== setsuperadmin 交互 ====================
-        if cmd == "setsuperadmin":
-            if step == "user_id":
-                user = get_user(user_id)
-                if not user or user["role"] != "owner":
-                    clear_state(user_id)
-                    yield event.plain_result("只有机器人创建者可以设置超级管理员")
-                    return
-                conn = get_db()
-                conn.execute("UPDATE users SET role='super_admin' WHERE tg_id=?", (text,))
-                conn.commit()
-                conn.close()
-                target = get_user(text)
+            target = get_user(text)
+            if not target:
                 clear_state(user_id)
-                yield event.plain_result(f"已将 {target['nickname'] if target else text} 设为超级管理员")
+                yield event.plain_result("用户不存在")
                 return
+            conn = get_db()
+            conn.execute("UPDATE users SET role='admin' WHERE tg_id=?", (text,))
+            conn.commit()
+            conn.close()
+            clear_state(user_id)
+            yield event.plain_result(f"已将 {target['nickname']} 设为管理员")
+            return
 
-        # ==================== setperm 交互 ====================
+        # ===== setsuperadmin =====
+        if cmd == "setsuperadmin" and step == "user_id":
+            user = get_user(user_id)
+            if not user or user["role"] != "owner":
+                clear_state(user_id)
+                yield event.plain_result("只有机器人创建者可以设置超级管理员")
+                return
+            conn = get_db()
+            conn.execute("UPDATE users SET role='super_admin' WHERE tg_id=?", (text,))
+            conn.commit()
+            conn.close()
+            target = get_user(text)
+            clear_state(user_id)
+            yield event.plain_result(f"已将 {target['nickname'] if target else text} 设为超级管理员")
+            return
+
+        # ===== setperm =====
         if cmd == "setperm":
             if step == "user_id":
                 user = get_user(user_id)
@@ -625,7 +507,7 @@ class TKBotPlugin(Star):
                     return
                 state["data"]["target_id"] = text
                 state["step"] = "perm"
-                yield event.plain_result("请输入权限名（all=全部权限，manage_admin=管理管理员，manage_ai=管理AI，view_users=查看用户）")
+                yield event.plain_result("请输入权限名（all=全部，manage_admin=管理管理员，manage_ai=管理AI，view_users=查看用户）")
                 return
             elif step == "perm":
                 target_id = state["data"]["target_id"]
@@ -641,7 +523,7 @@ class TKBotPlugin(Star):
                 yield event.plain_result(f"已给 {target['nickname']} 分配权限：{text}\n当前权限：{', '.join(perms)}")
                 return
 
-    # ==================== 命令入口（只设置交互状态） ====================
+    # ==================== 命令入口 ====================
     @filter.command("register")
     async def register(self, event: AstrMessageEvent):
         user_id = str(event.get_sender_id())
@@ -660,19 +542,6 @@ class TKBotPlugin(Star):
         set_state(user_id, "login", "password")
         yield event.plain_result("请输入密码")
 
-    @filter.command("secondpass")
-    async def second_pass(self, event: AstrMessageEvent):
-        user_id = str(event.get_sender_id())
-        user = get_user(user_id)
-        if not user:
-            yield event.plain_result("请先登录")
-            return
-        if not user["second_password_hash"]:
-            yield event.plain_result("你没有设置二级密码")
-            return
-        set_state(user_id, "secondpass", "password")
-        yield event.plain_result("请输入二级密码")
-
     @filter.command("profile")
     async def profile(self, event: AstrMessageEvent):
         user_id = str(event.get_sender_id())
@@ -682,9 +551,7 @@ class TKBotPlugin(Star):
             return
         role_text = {"super_admin": "超级管理员", "admin": "管理员", "user": "普通用户", "owner": "创建者"}.get(user["role"], "普通用户")
         reg_time = time.strftime("%Y-%m-%d %H:%M", time.localtime(user["register_time"]))
-        yield event.plain_result(
-            f"个人信息\n昵称：{user['nickname']}\n身份：{role_text}\n注册时间：{reg_time}\n二级密码：{'已设置' if user['second_password_hash'] else '未设置'}"
-        )
+        yield event.plain_result(f"个人信息\n昵称：{user['nickname']}\n身份：{role_text}\n注册时间：{reg_time}")
 
     @filter.command("ai")
     async def ai_command(self, event: AstrMessageEvent):
@@ -802,9 +669,8 @@ class TKBotPlugin(Star):
             return
         text = "我的存储\n"
         for r in records:
-            t = time.strftime("%m-%d %H:%M", time.localtime(r["update_time"]))
             val_preview = r["value"][:30] + "..." if len(r["value"]) > 30 else r["value"]
-            text += f"{r['key']} = {val_preview} ({t})\n"
+            text += f"{r['key']} = {val_preview}\n"
         yield event.plain_result(text)
 
     @filter.command("weather")
@@ -821,9 +687,8 @@ class TKBotPlugin(Star):
 
     @filter.command("dice")
     async def dice(self, event: AstrMessageEvent):
-        n = 1
-        results = [random.randint(1, 6) for _ in range(n)]
-        yield event.plain_result(f"掷出 {n} 个骰子：{results}\n总和：{sum(results)}")
+        results = [random.randint(1, 6)]
+        yield event.plain_result(f"掷出骰子：{results}\n总和：{sum(results)}")
 
     @filter.command("sign")
     async def sign(self, event: AstrMessageEvent):
@@ -847,7 +712,7 @@ class TKBotPlugin(Star):
             (user_id, key, "1", now))
         conn.commit()
         conn.close()
-        yield event.plain_result(f"签到成功！\n累计签到：{total} 天\n明天继续哦")
+        yield event.plain_result(f"签到成功！\n累计签到：{total} 天")
 
     @filter.command("addadmin")
     async def add_admin(self, event: AstrMessageEvent):
@@ -913,53 +778,49 @@ class TKBotPlugin(Star):
         conn.close()
         yield event.plain_result(f"已将 {user['nickname']} 设为机器人创建者（最高权限）")
 
-    # ==================== 帮助命令（分权限） ====================
     @filter.command("help")
     async def help_cmd(self, event: AstrMessageEvent):
         user_id = str(event.get_sender_id())
         user = get_user(user_id)
 
-        # 普通用户帮助（所有人可见）
-        text = """📖 命令大全
+        text = """命令大全
 
-🔐 用户系统
+用户系统
 /register - 注册账号
 /login - 登录
-/secondpass - 验证二级密码
 /profile - 个人信息
 
-🤖 AI 聊天
+AI 聊天
 /ai - 和 AI 对话
 
-📁 文件管理
+文件管理
 /upload - 上传文件
 /files - 我的文件
-/search - 搜索文件内容
+/search - 搜索文件
 /delfile - 删除文件
 
-📦 存储功能
+存储功能
 /set - 存储数据
 /get - 读取数据
 /del - 删除数据
 /keys - 所有存储键
 
-🛠 实用工具
+实用工具
 /weather - 天气查询
 /translate - 翻译
 /dice - 掷骰子
 /sign - 每日签到
 """
 
-        # 管理员及以上才显示管理命令
         if user and is_admin(user):
             text += """
-👑 管理命令
+管理命令
 /addadmin - 添加管理员
 /setsuperadmin - 设超级管理员
-/setperm - 分配管理员权限
+/setperm - 分配权限
 /userlist - 查看用户列表
 /setai - 设置 AI API
-/initowner - 初始化创建者（首次）
+/initowner - 初始化创建者
 """
 
         yield event.plain_result(text)

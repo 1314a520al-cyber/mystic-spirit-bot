@@ -1,38 +1,16 @@
-name: mystic-spirit-bot
+name: mystic_spirit_bot
 display_name: 秘庭-幻灵
-short_desc: 用户系统+权限、AI聊天、文件管理+全文搜索、存储、实用工具
+short_desc: 用户系统+权限、AI聊天、文件管理、存储、实用工具
 desc: |
-  ## 功能清单
-  
-  ### 🔐 用户系统 + 权限
-  - 注册/登录（验证码机制）
-  - 二级密码验证
-  - 四级权限：创建者 > 超级管理员 > 管理员 > 普通用户
-  - 管理员权限可自由分配
-  
-  ### 🤖 AI 聊天
-  - 内置免费公共 API（无需 Key 也能用）
-  - 支持自定义 DeepSeek/OpenAI 兼容 API
-  - 管理员可配置 API Key
-  
-  ### 📁 文件管理 + 全文搜索
-  - 转发文件自动上传保存
-  - 文本文件内容提取
-  - 关键词搜索文件内容（显示上下文）
-  - 文件标签分类
-  
-  ### 📦 存储功能
-  - 键值对存储，类似云笔记
-  - 支持增删改查
-  - 每个用户独立存储
-  
-  ### 🛠 实用工具
-  - 天气查询、中英翻译、掷骰子、每日签到
-version: 1.0.0
+  秘庭-幻灵全能机器人插件
+  - 用户系统+权限管理
+  - AI 聊天
+  - 文件管理
+  - 键值存储
+  - 实用工具
+version: 1.0.3
 author: TK
 repo: ""
 support_platforms:
   - telegram
-  - aiocqhttp
-  - discord
-astrbot_version: ">=4.0"
+astrbot_version: ">=3.0"
