@@ -212,7 +212,7 @@ class TKBotPlugin(Star):
         logger.info("TK全能机器人插件已卸载")
 
     # ==================== 交互式消息监听器 ====================
-    @filter.regex(".*")
+    @filter.event_message_type(filter.EventMessageType.ALL)
     async def on_interactive_message(self, event: AstrMessageEvent):
         """处理交互式命令的后续输入"""
         global AI_API_KEY, AI_API_URL, AI_MODEL
